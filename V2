@@ -267,7 +267,7 @@ MinimizeButton.TextWrapped = true
 
 -- Scripts:
 
-local function MZKK_fake_script() -- Frame.LocalScript 
+local function HFLO_fake_script() -- Frame.LocalScript 
 	local script = Instance.new('LocalScript', Frame)
 
 	-- Referensi ke objek frame
@@ -304,16 +304,15 @@ local function MZKK_fake_script() -- Frame.LocalScript
 	frame.InputChanged:Connect(onInputChanged)
 	
 end
-coroutine.wrap(MZKK_fake_script)()
-local function LCGJN_fake_script() -- ScreenGui.LocalScript 
+coroutine.wrap(HFLO_fake_script)()
+local function HXWKMVK_fake_script() -- ScreenGui.LocalScript 
 	local script = Instance.new('LocalScript', ScreenGui)
 
-	-- Anti-AFK Script (Diperbarui untuk lebih natural)
+	-- Anti-AFK Script
 	local VirtualUser = game:GetService("VirtualUser")
 	game:GetService("Players").LocalPlayer.Idled:Connect(function()
-		wait(math.random(300, 600))  -- Mengacak waktu agar terlihat lebih natural
 		VirtualUser:CaptureController()
-		VirtualUser:ClickButton2(Vector2.new(math.random(-10, 10), math.random(-10, 10))) -- Klik acak untuk menghindari pola yang sama
+		VirtualUser:ClickButton2(Vector2.new(0, 0))
 	end)
 	
 	print("Anti-AFK script telah diaktifkan!")
@@ -354,23 +353,29 @@ local function LCGJN_fake_script() -- ScreenGui.LocalScript
 	_G.Kill_Aura = false
 	
 	-- Fungsi untuk mengatur noclip
-	local originalCanCollide = {}
 	local function setNoclip(character, noclip)
 		for _, part in ipairs(character:GetDescendants()) do
 			if part:IsA("BasePart") then
-				if noclip then
-					originalCanCollide[part] = part.CanCollide
-					part.CanCollide = false
-				else
-					if originalCanCollide[part] ~= nil then
-						part.CanCollide = originalCanCollide[part]
-					end
-				end
+				part.CanCollide = not noclip
 			end
 		end
 	end
 	
-	-- Fungsi teleportasi dengan tween (Diperbarui agar lebih natural)
+	-- Fungsi untuk mengecek apakah player spawn dalam radius 200 studs dari target CFrame
+	local function isPlayerNearTarget(character, targetCFrame, radius)
+		local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+		local distance = (humanoidRootPart.Position - targetCFrame.Position).Magnitude
+		return distance <= (radius or 200)
+	end
+	
+	-- Fungsi untuk menghentikan tween jika player sudah di tempat target
+	local function hasReachedTarget(character, targetCFrame, tolerance)
+		local humanoidRootPart = character:WaitForChild("HumanoidRootPart")
+		local distance = (humanoidRootPart.Position - targetCFrame.Position).Magnitude
+		return distance <= (tolerance or 5)
+	end
+	
+	-- Fungsi teleportasi dengan tween
 	local function teleport(targetCFrame)
 		local player = Players.LocalPlayer
 		local character = player.Character or player.CharacterAdded:Wait()
@@ -378,28 +383,21 @@ local function LCGJN_fake_script() -- ScreenGui.LocalScript
 	
 		if targetCFrame then
 			local targetPosition = targetCFrame.Position
-			local distance = (humanoidRootPart.Position - targetPosition).Magnitude
+			local distance = (humanoidRootPart.Position - targetPosition).magnitude
 	
-			if distance > 5 then
+			if not hasReachedTarget(character, targetCFrame, 5) then
 				setNoclip(character, true)
 	
-				local tweenSpeed = (distance < 250) and 300 or (distance > 1000) and 100 or distance / 8
-				local tweenDuration = distance / tweenSpeed + math.random() -- Memberikan variasi durasi
+				local tweenSpeed = (distance < 250) and 600 or (distance > 1000) and 200 or distance / 5
+				local tweenDuration = distance / tweenSpeed
 	
 				local tweenInfo = TweenInfo.new(tweenDuration, Enum.EasingStyle.Linear, Enum.EasingDirection.Out)
 				local tween = TweenService:Create(humanoidRootPart, tweenInfo, { CFrame = targetCFrame })
 	
-				local success, errorMessage = pcall(function()
-					tween:Play()
-					tween.Completed:Wait()
-				end)
+				tween:Play()
+				tween.Completed:Wait()
 	
-				if success then
-					humanoidRootPart.CFrame = targetCFrame
-				else
-					warn("Teleport error: " .. tostring(errorMessage))
-				end
-	
+				humanoidRootPart.CFrame = targetCFrame
 				setNoclip(character, false)
 			else
 				warn("Player sudah berada di target CFrame")
@@ -409,27 +407,47 @@ local function LCGJN_fake_script() -- ScreenGui.LocalScript
 		end
 	end
 	
-	-- Fungsi toggle generik untuk PAD (Diperbarui untuk kestabilan)
+	-- Fungsi teleportasi terus-menerus setelah tween selesai
+	local function continuousTeleport(targetCFrame, isPADOn, connection)
+		local player = Players.LocalPlayer
+		local character = player.Character or player.CharacterAdded:Wait()
+	
+		if connection then
+			connection:Disconnect()
+		end
+	
+		if isPADOn then
+			teleport(targetCFrame)
+	
+			connection = RunService.Heartbeat:Connect(function()
+				if isPlayerNearTarget(character, targetCFrame, 200) then
+					if not hasReachedTarget(character, targetCFrame, 5) then
+						wait(2) -- Tambahkan jeda 1 detik sebelum teleportasi ulang
+						teleport(targetCFrame)
+					end
+				end
+			end)
+		else
+			if connection then
+				connection:Disconnect()
+			end
+			setNoclip(character, false)
+		end
+	
+		return connection
+	end
+	
+	-- Fungsi toggle generik untuk PAD
 	local function togglePAD(PAD, Circle, isPADOn, targetCFrame, connection)
 		isPADOn = not isPADOn
 		if isPADOn then
 			Circle.Position = UDim2.new(0.629, 0, 0, 0)
 			PAD.ImageColor3 = Color3.fromRGB(53, 255, 110)
-	
-			-- Mengaktifkan teleportasi terus-menerus
-			connection = RunService.Stepped:Connect(function()
-				teleport(targetCFrame)
-			end)
+			connection = continuousTeleport(targetCFrame, isPADOn, connection)
 		else
 			Circle.Position = UDim2.new(0, 0, 0, 0)
 			PAD.ImageColor3 = Color3.fromRGB(200, 200, 200)
-	
-			-- Memutuskan koneksi jika tidak digunakan lagi
-			if connection then
-				connection:Disconnect()
-				connection = nil
-			end
-			setNoclip(Players.LocalPlayer.Character, false)
+			connection = continuousTeleport(nil, isPADOn, connection)
 		end
 		return isPADOn, connection
 	end
@@ -456,7 +474,7 @@ local function LCGJN_fake_script() -- ScreenGui.LocalScript
 	
 							if humanoid and humanoidRootPart and humanoid.Health > 0 then
 								local distance = (humanoidRootPart.Position - playerPosition).Magnitude
-								if distance <= 150 then
+								if distance <= 200 then
 									wait(math.random(0.2, 1)) -- Jeda waktu acak agar lebih natural
 									humanoid.Health = 0 -- NPC langsung mati
 								end
@@ -468,7 +486,7 @@ local function LCGJN_fake_script() -- ScreenGui.LocalScript
 						warn("Error in Kill Aura: " .. errorMessage)
 					end
 	
-					wait(math.random(2, 3)) -- Interval lebih besar dan acak untuk mengurangi risiko terdeteksi
+					wait(1) -- Interval diperbesar untuk mengurangi risiko terdeteksi sebagai script abuse
 				end
 			end)
 			auraCoroutine()
@@ -477,6 +495,27 @@ local function LCGJN_fake_script() -- ScreenGui.LocalScript
 			AURA.ImageColor3 = Color3.fromRGB(200, 200, 200)
 		end
 	end
+	
+	-- Fungsi untuk toggle minimize frame
+	local function toggleMinimize()
+		isMinimized = not isMinimized
+		Frame.Visible = not isMinimized
+	end
+	
+	-- Set tampilan awal
+	local function setInitialState()
+		Circle1.Position = UDim2.new(0, 0, 0, 0)
+		PAD1.ImageColor3 = Color3.fromRGB(200, 200, 200)
+		Circle2.Position = UDim2.new(0, 0, 0, 0)
+		PAD2.ImageColor3 = Color3.fromRGB(200, 200, 200)
+		Circle3.Position = UDim2.new(0, 0, 0, 0)
+		PAD3.ImageColor3 = Color3.fromRGB(200, 200, 200)
+		Circle4.Position = UDim2.new(0, 0, 0, 0)
+		AURA.ImageColor3 = Color3.fromRGB(200, 200, 200)
+	end
+	
+	-- Set tampilan awal
+	setInitialState()
 	
 	-- Event listener untuk setiap tombol PAD
 	Button1.MouseButton1Click:Connect(function()
@@ -492,23 +531,7 @@ local function LCGJN_fake_script() -- ScreenGui.LocalScript
 	end)
 	
 	Button4.MouseButton1Click:Connect(toggleAURA)
-	MinimizeButton.MouseButton1Click:Connect(function()
-		isMinimized = not isMinimized
-		Frame.Visible = not isMinimized
-	end)
+	MinimizeButton.MouseButton1Click:Connect(toggleMinimize)
 	
-	-- Set tampilan awal
-	local function setInitialState()
-		Circle1.Position = UDim2.new(0, 0, 0, 0)
-		PAD1.ImageColor3 = Color3.fromRGB(200, 200, 200)
-		Circle2.Position = UDim2.new(0, 0, 0, 0)
-		PAD2.ImageColor3 = Color3.fromRGB(200, 200, 200)
-		Circle3.Position = UDim2.new(0, 0, 0, 0)
-		PAD3.ImageColor3 = Color3.fromRGB(200, 200, 200)
-		Circle4.Position = UDim2.new(0, 0, 0, 0)
-		AURA.ImageColor3 = Color3.fromRGB(200, 200, 200)
-	end
-	
-	setInitialState()
 end
-coroutine.wrap(LCGJN_fake_script)()
+coroutine.wrap(HXWKMVK_fake_script)()
